@@ -79,7 +79,7 @@ Measured idle (60 s, screen on, no user activity), before and after:
 | Ambient light sensor | `acpi-als` + iio-sensor-proxy | ✅ GNOME auto-brightness works |
 | Thunderbolt 3 | `thunderbolt` + bolt | ✅ |
 | NVMe | `nvme` | ✅ APST + ASPM L1.2 |
-| Fingerprint reader | — | ❌ **no Linux driver** (Goodix sensor not on USB; libfprint can't use it) |
+| Fingerprint reader | — | ❌ **not possible**: EC-mailbox device with SGX-sealed encryption (see [FAQ](#faq)) |
 | Microcode | `intel-microcode` | ✅ revision `0x100` (latest) |
 
 ---
@@ -357,7 +357,11 @@ gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffe
 Then pick the scale in Settings → Displays.
 
 **Does the fingerprint reader work?**
-No. It's a Goodix `GXFP51B7` on a non-USB bus, and libfprint has no driver for it.
+No, and it almost certainly never will without help from Huawei/Goodix:
+- **How it's attached.** The Goodix `GXFP51B7` is neither USB nor SPI. It's an ACPI platform device (`\_SB_.SPBA`) behind an embedded-controller shared-memory mailbox, so libfprint and the "Goodix SPI" community drivers can't bind to it.
+- **Why it can't be cracked.** The sensor only talks over an encrypted channel whose per-device key is sealed with Intel SGX, so authentication isn't achievable on Linux. Community reverse engineering on real 2020 hardware reached this conclusion ([OpenGoodixSPI #16](https://github.com/PeshalaDilshan/OpenGoodixSPI/issues/16)), and the libfprint request was closed without support ([libfprint #307](https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/307)).
+- **Don't confuse it with the 2018 model.** The MateBook X Pro 2018 (`MACH-WX9`) has a **different** sensor (`GXFP5187`) that does have a working community driver ([libfprint-goodixtls](https://github.com/Sigfrodr/libfprint-goodixtls), [libfprint #112](https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/112)). Guides for that model won't work on the 2020.
+- **Alternative.** For quick unlock, use a FIDO2 security key with `pam-u2f`. The camera has no IR, so face unlock (Howdy) isn't secure.
 
 **Firmware updates?**
 `fwupdmgr` sees the BIOS (UEFI capsule), the NVMe and the TPM, but Huawei publishes nothing on LVFS. BIOS updates require Windows / Huawei PC Manager.
