@@ -24,7 +24,8 @@ Measured idle (60 s, screen on, no user activity), before and after:
 | CPU package power (RAPL) | 1.50 W | **0.26 W** |
 | Whole-laptop idle drain (battery) | not measured (was on AC) | **2.7 W, ≈18 h idle** on the 52 Wh battery |
 | Speakers | 2 of 4 | **4 of 4** |
-| Headset microphone (3.5 mm jack) | not detected | **works** |
+| Headset microphone (3.5 mm jack) | not available | **available** (select it manually) |
+| Internal microphone | works | **works** (default input) |
 | Boot, userspace part | 14.9 s | **8.9 s** |
 | Desktop session | X11 (forced by the NVIDIA driver) | **Wayland** |
 | Kernel taint / Secure Boot | tainted (proprietary module) / off | **clean / on** |
@@ -74,7 +75,7 @@ Measured idle (60 s, screen on, no user activity), before and after:
 | Wi-Fi | `iwlwifi` | ✅ firmware `QuZ-a0-jf-b0-77`, 160 MHz |
 | Bluetooth | `btusb`/`btintel` | ✅ |
 | Speakers | `snd_hda_intel` + Realtek | ⚠️ **only 2 of 4** (see F2) |
-| Internal mic | `snd_hda_intel` | ✅ |
+| Internal mic | `snd_hda_intel` | ✅ (but see F2b once the speaker fix is applied) |
 | Headset mic | `snd_hda_intel` | ❌ **not configured** (see F2) |
 | HDMI/DP audio | `snd_hda_intel` | ✅ |
 | Camera | `uvcvideo` | ✅ |
@@ -152,7 +153,42 @@ You don't need the "Analog Surround 4.0" profile that older guides recommend. Th
 
 > Tip: `/proc/asound/card0/codec#0` still shows the BIOS values. The active ones are in `/sys/class/sound/hwC0D0/driver_pin_configs`.
 
-**Testing that all four speakers play.** Play music, then turn **one pair at a time** off with its DAC volume:
+### F2b. The speaker fix hides the internal microphone (and how to fix that)
+
+**Symptom.** After the F2 fix, the built-in microphone records silence. PipeWire's input is set to "Microphone" (the jack), and "Internal Microphone" is marked unavailable, even with nothing plugged in.
+
+**Why.** The 2018 fixup sets pin `0x19` to `0x04a11040`: a headset mic **with** presence detection. On the 2020 model that pin always reports "plugged in":
+
+```
+$ amixer -c0 contents | grep -A2 "Jack'"
+name='Headphone Jack'   values=off
+name='Mic Jack'         values=on     <- nothing is plugged in
+```
+
+The generic HDA parser then enables auto-mic switching to the jack (the input mux at node `0x23` selects `0x19`, and `0x12` is muted), and PipeWire routes `analog-input-mic` as the active port.
+
+**Fix.** Keep the model alias, but override pin `0x19` to `0x04a11140` with an HDA *patch file*. The misc bit `0x1` means "no presence detect". The kernel supports this through `CONFIG_SND_HDA_PATCH_LOADER=y` (enabled in Debian):
+
+```
+# /lib/firmware/matebook-x-pro-2020-audio.fw
+[codec]
+0x10ec0256 0x1e833223 0
+
+[pincfg]
+0x19 0x04a11140
+```
+```
+# /etc/modprobe.d/matebook-audio.conf
+options snd-hda-intel model=19e5:3204 patch=matebook-x-pro-2020-audio.fw
+```
+
+User pin configs (`/sys/class/sound/hwC0D0/user_pin_configs`) take priority over the driver fixup, so the speaker part of the fixup is unchanged. Without a false "plugged" signal, PipeWire picks the internal mic (path priority 89) over the jack mic (87). A headset mic still works; select it in Settings → Sound → Input. `snd-hda-intel` isn't in the initramfs, so the file in `/lib/firmware` is enough. Confirmed working on the test machine. [`02-apply.sh`](scripts/02-apply.sh) now installs both files, and [`07-mic-fix.sh`](scripts/07-mic-fix.sh) upgrades systems that ran the earlier version.
+
+### Testing the audio fixes
+
+**Microphone:** Settings → Sound → Input should show the internal microphone, and its level bar should move when you talk. `cat /sys/class/sound/hwC0D0/user_pin_configs` should list `0x19 0x04a11140`.
+
+**All four speakers:** play music, then turn **one pair at a time** off with its DAC volume:
 
 ```bash
 amixer -c0 sset 'Bass Speaker' 0%    # pair on 0x1b off -> you hear only the pin 0x14 pair
@@ -226,6 +262,7 @@ All scripts are bash, idempotent where possible, and log to `scripts/logs/` (git
 | [`04-services.sh`](scripts/04-services.sh) | `sudo` | **Yes** | Masks services the laptop doesn't need |
 | [`05-browsers.sh`](scripts/05-browsers.sh) | your user | Yes (user files only) | Chrome/Brave on native Wayland with VA-API video decoding |
 | [`06-hardening.sh`](scripts/06-hardening.sh) | `sudo` | **Yes** | Automatic security updates, ufw firewall (SSH rate-limited), CPU sustained power limit 25 W |
+| [`07-mic-fix.sh`](scripts/07-mic-fix.sh) | `sudo` | **Yes** | Internal-mic fix (F2b) for systems that ran an older `02-apply.sh`. New installs don't need it |
 
 ### How the idle measurement works (01 and 03)
 
@@ -253,7 +290,7 @@ Before it starts, it checks the model, the OS and AC power, then asks you to typ
    - Removes stray NVIDIA config links and writes `/etc/modprobe.d/matebook-dgpu-off.conf`, which blacklists nouveau.
    - Writes `/etc/udev/rules.d/80-matebook-dgpu-power.rules`, which sets `power/control=auto` on the MX250 so its root port can enter D3cold.
 3. **`apt-get full-upgrade`.**
-4. **Audio fix:** writes `/etc/modprobe.d/matebook-audio.conf` (`model=19e5:3204`).
+4. **Audio fix:** writes `/etc/modprobe.d/matebook-audio.conf` (`model=19e5:3204 patch=...`) and the patch file `/lib/firmware/matebook-x-pro-2020-audio.fw`, which turns off the false jack detection on pin `0x19` (see F2b).
 5. **thermald:** installs and enables it.
 6. **Docker/containerd/Apache on demand:** disables the services at boot. `docker.socket` stays enabled, so `docker` starts on first use.
 7. **Tweaks:**
@@ -320,6 +357,7 @@ sudo bash scripts/03-verify.sh        # unplug the charger first to measure batt
 sudo bash scripts/04-services.sh      # optional
 bash scripts/05-browsers.sh           # optional, as your normal user
 sudo bash scripts/06-hardening.sh     # optional: security updates, firewall, 25 W limit
+# sudo bash scripts/07-mic-fix.sh     # only if you ran 02-apply.sh before 2026-10-03 (internal mic silent)
 ```
 
 **Read the scripts before running them.** They were written for one specific machine and set of choices, such as removing the NVIDIA driver and making Docker/Apache on-demand. Edit `02-apply.sh` if your choices differ: each step is a separate function called from `main()`, so you can comment steps out.
@@ -364,7 +402,7 @@ Side effects:
 |---|---|
 | APT sources | Copy `etc/apt/sources.list` (and the `.list.d` file) back from the backup, then `sudo apt update` |
 | Integrated-only graphics | `sudo rm /etc/modprobe.d/matebook-dgpu-off.conf /etc/udev/rules.d/80-matebook-dgpu-power.rules && sudo apt install nvidia-driver && sudo update-initramfs -u`, then reboot (with Secure Boot, enroll the MOK key) |
-| Audio fix | `sudo rm /etc/modprobe.d/matebook-audio.conf`, then reboot |
+| Audio fix | `sudo rm /etc/modprobe.d/matebook-audio.conf /lib/firmware/matebook-x-pro-2020-audio.fw`, then reboot |
 | thermald | `sudo apt purge thermald` |
 | Docker/Apache on demand | `sudo systemctl enable docker.service containerd.service apache2.service` |
 | GRUB timeout | `GRUB_TIMEOUT=5` in `/etc/default/grub`, then `sudo update-grub` |

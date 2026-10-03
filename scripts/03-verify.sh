@@ -110,6 +110,8 @@ main() {
     check "snd-hda-intel model option active (19e5:3204)" bash -c '[[ $(cat /sys/module/snd_hda_intel/parameters/model) == 19e5:3204* ]]'
     check "Speaker pin 0x14 enabled by driver fixup (0x90170110)" grep -qx '0x14 0x90170110' /sys/class/sound/hwC0D0/driver_pin_configs
     check "Headset mic pin 0x19 enabled by driver fixup (0x04a11040)" grep -qx '0x19 0x04a11040' /sys/class/sound/hwC0D0/driver_pin_configs
+    check "Pin 0x19 jack detection off (patch file loaded)" grep -qx '0x19 0x04a11140' /sys/class/sound/hwC0D0/user_pin_configs
+    check "No false 'Mic Jack' plugged signal" bash -c '! amixer -c0 cget name="Mic Jack" 2>/dev/null | grep -q ": values=on"'
     check "Mixer has 'Bass Speaker' control (2nd speaker pair)" bash -c 'amixer -c0 scontrols | grep -q "Bass Speaker"'
     check "thermald running" systemctl is-active --quiet thermald.service
     check "zram swap active" bash -c 'swapon --show=NAME --noheadings | grep -q zram'

@@ -160,12 +160,24 @@ full_upgrade() {
 
 audio_fix() {
     step "4/9 Audio: all 4 speakers, headset mic, mic-mute LED"
+    # Pin 0x19 override: its jack detection falsely reports "plugged in" on the 2020 model,
+    # which would make PipeWire record from the empty jack instead of the internal mic.
+    write_file /lib/firmware/matebook-x-pro-2020-audio.fw <<'EOF'
+[codec]
+0x10ec0256 0x1e833223 0
+
+[pincfg]
+0x19 0x04a11140
+EOF
     write_file /etc/modprobe.d/matebook-audio.conf <<'EOF'
 # MateBook X Pro 2020 (ALC256, codec SSID 1e83:3223): apply the upstream kernel fixup of the
 # 2018 model "Huawei MACH-WX9" (SSID 19e5:3204, ALC256_FIXUP_HUAWEI_MACH_WX9_PINS): enables the
 # second speaker pair (pin 0x14), the headset mic (pin 0x19) and the mic-mute LED hook.
-# Installed by huawei-matebook-debian-optimization/scripts/02-apply.sh. Undo: delete this file and reboot.
-options snd-hda-intel model=19e5:3204
+# The patch file turns off jack detection on pin 0x19, which falsely reports "plugged in" on
+# this model and would hide the internal mic.
+# Installed by huawei-matebook-debian-optimization/scripts/02-apply.sh.
+# Undo: delete this file and /lib/firmware/matebook-x-pro-2020-audio.fw, then reboot.
+options snd-hda-intel model=19e5:3204 patch=matebook-x-pro-2020-audio.fw
 EOF
 }
 
