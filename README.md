@@ -381,4 +381,8 @@ Contributions with measurements from other models are welcome.
 
 ---
 
+## License
+
+[MIT](LICENSE): free to use, modify and share. Provided as is, without warranty.
+
 *Tested on Debian 13.7, kernel 6.12.111, GNOME 48, October 2026. Use at your own risk: read the scripts, keep backups, and have a live USB stick at hand when changing drivers.*
