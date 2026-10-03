@@ -1,0 +1,43 @@
+name: Hardware report (other MateBook model)
+description: Share results from another MateBook model or Linux distribution so the guide can cover it.
+title: "[Hardware] <model, e.g. MACH-W19> on <distro>"
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping other MateBook owners! Please **remove MAC addresses and serial numbers** from any pasted output.
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Output of `cat /sys/class/dmi/id/product_name /sys/class/dmi/id/bios_version`
+      placeholder: MACH-W19 / 1.30
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and kernel
+      description: e.g. `Debian 13, 6.12.111` (`uname -r`)
+    validations:
+      required: true
+  - type: textarea
+    id: audio
+    attributes:
+      label: Audio codec and pin configs
+      description: Output of `cat /sys/class/sound/hwC0D0/subsystem_id /sys/class/sound/hwC0D0/init_pin_configs`
+      render: text
+  - type: textarea
+    id: dgpu
+    attributes:
+      label: Discrete GPU and power resources (if any)
+      description: Output of `lspci -nn | grep -iE 'vga|3d'` and `ls /sys/bus/pci/devices/*/firmware_node/power_resources_D3hot 2>/dev/null`
+      render: text
+  - type: textarea
+    id: results
+    attributes:
+      label: What worked / what didn't
+      description: Which scripts or fixes you tried, and the result (03-verify.sh check lines and idle measurement are very welcome).
+    validations:
+      required: true

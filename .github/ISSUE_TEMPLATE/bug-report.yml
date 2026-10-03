@@ -1,0 +1,33 @@
+name: Bug report
+description: A script failed or a fix did not behave as described.
+title: "[Bug] <short description>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Please **remove MAC addresses and serial numbers** from logs before pasting.
+  - type: dropdown
+    id: script
+    attributes:
+      label: Which script or fix?
+      options: [01-diagnostics.sh, 02-apply.sh, 03-verify.sh, 04-services.sh, 05-browsers.sh, README instructions]
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Model, distribution, kernel
+      placeholder: MACHC-WAX9, Debian 13.7, 6.12.111
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log output (from scripts/logs/)
+      render: text

@@ -1,5 +1,10 @@
 # Huawei MateBook X Pro 2020 on Debian 13: drivers and optimization
 
+[![Debian 13](https://img.shields.io/badge/Debian-13%20trixie-A81D33?logo=debian)](https://www.debian.org/releases/trixie/)
+[![Kernel 6.12](https://img.shields.io/badge/kernel-6.12-blue?logo=linux&logoColor=white)](https://kernel.org)
+[![Model](https://img.shields.io/badge/MateBook%20X%20Pro-2020%20(MACHC--WAX9)-black)](#hardware)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 Findings, measurements and scripts from setting up a **Huawei MateBook X Pro 2020 (`MACHC-WAX9`)** on **Debian 13 "trixie"**. The goal was simple: every piece of hardware working, and the machine as fast, cool and battery-efficient as possible.
 
 On a stock install, most hardware works. Two things don't:
@@ -372,7 +377,7 @@ No, and it almost certainly never will without help from Huawei/Goodix:
 - **MateBook X Pro 2019 (`MACH-W19`)**: very likely the same as 2020. Check `cat /sys/class/sound/hwC0D0/init_pin_configs` against the values above and `cat /sys/class/sound/hwC0D0/subsystem_id`.
 - **Others:** the method carries over: check `driver_pin_configs`, the dGPU root port's `firmware_node/power_resources_D3hot`, and package C-states. Change the model check at the top of `02-apply.sh` only once you've checked these.
 
-Contributions with measurements from other models are welcome.
+Contributions with measurements from other models are welcome. Please use the **[hardware report](../../issues/new?template=hardware-report.yml)** issue template.
 
 ## References
 
