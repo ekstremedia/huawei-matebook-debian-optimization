@@ -1,0 +1,4 @@
+# Script logs contain machine identifiers (MAC addresses, serials, UUIDs) - never commit them.
+scripts/logs/
+*.log
+*.csv
