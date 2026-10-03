@@ -152,6 +152,17 @@ You don't need the "Analog Surround 4.0" profile that older guides recommend. Th
 
 > Tip: `/proc/asound/card0/codec#0` still shows the BIOS values. The active ones are in `/sys/class/sound/hwC0D0/driver_pin_configs`.
 
+**Testing that all four speakers play.** Play music, then turn **one pair at a time** off with its DAC volume:
+
+```bash
+amixer -c0 sset 'Bass Speaker' 0%    # pair on 0x1b off -> you hear only the pin 0x14 pair
+amixer -c0 sset 'Bass Speaker' 100%
+amixer -c0 sset Front 0%             # pair on 0x14 off -> you hear only the pin 0x1b pair
+amixer -c0 sset Front 100%
+```
+
+If you hear sound in both cases, all four speakers work (confirmed on the test machine). **Don't test with `sset 'Bass Speaker' mute`.** PipeWire's speaker path treats the `Speaker`/`Bass Speaker` switches as the sink's mute, so muting one of them mutes everything, which looks like a broken pair. If that happens, unmute the switch and the sink again: `amixer -c0 sset 'Bass Speaker' unmute; wpctl set-mute @DEFAULT_AUDIO_SINK@ 0`.
+
 ### F3. GNOME was forced onto X11
 
 GDM's udev rule (`/usr/lib/udev/rules.d/61-gdm.rules`) turns Wayland off when the NVIDIA driver is loaded without `NVreg_PreserveVideoMemoryAllocations=1`. That was the case on the stock driver setup. With the NVIDIA driver gone, GDM defaults to **Wayland**, which handles the 3K screen, fractional scaling and touch gestures better. "GNOME on Xorg" is still selectable from the gear icon on the login screen.
@@ -171,7 +182,7 @@ ACPI Error: Aborting method \_SB.IETM.IDSP due to previous error
 
 The DPTF policy list is therefore empty (`available_uuids: UNKNOWN`), and **thermald can't use its adaptive mode**; it runs in polling mode instead. It's still installed as a safety net.
 
-> ⚠️ Observed afterwards: the RAPL long-term limit (PL1) went from the BIOS value **18 W** to **200 W** (effectively unlimited). Short bursts get faster, but long loads run at the thermal limit. Pinning PL1 to a sane value (e.g. 25 W, Intel's cTDP-up for this CPU) is a possible next step and is **not** done by these scripts.
+> ⚠️ Observed afterwards: the RAPL long-term limit (PL1) went from the BIOS value **18 W** to **200 W** (effectively unlimited). Short bursts get faster, but long loads run at the thermal limit. [`06-hardening.sh`](scripts/06-hardening.sh) pins PL1 to **25 W** (Intel's cTDP-up for this CPU) and leaves PL2 at 51 W, so short bursts are as fast as before and only long full loads are capped.
 
 ### F6. Boot time
 
@@ -214,6 +225,7 @@ All scripts are bash, idempotent where possible, and log to `scripts/logs/` (git
 | [`03-verify.sh`](scripts/03-verify.sh) | `sudo` | No | 24 OK/FAIL checks plus the same idle measurement, NVMe SMART, sensors, boot time |
 | [`04-services.sh`](scripts/04-services.sh) | `sudo` | **Yes** | Masks services the laptop doesn't need |
 | [`05-browsers.sh`](scripts/05-browsers.sh) | your user | Yes (user files only) | Chrome/Brave on native Wayland with VA-API video decoding |
+| [`06-hardening.sh`](scripts/06-hardening.sh) | `sudo` | **Yes** | Automatic security updates, ufw firewall (SSH rate-limited), CPU sustained power limit 25 W |
 
 ### How the idle measurement works (01 and 03)
 
@@ -275,6 +287,22 @@ To check it worked:
 1. Open `chrome://gpu` (`brave://gpu` in Brave). "Video Decode" should say *Hardware accelerated*.
 2. On YouTube, open "Stats for nerds". The codec should be `vp09` once AV1 is blocked.
 
+### What `06-hardening.sh` does
+
+1. **Automatic security updates.** Installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/20auto-upgrades`. Debian's default policy installs only packages from the `-security` origin, daily.
+2. **Firewall (ufw).** Denies all incoming, allows all outgoing. Exceptions:
+
+   | Rule | Why |
+   |---|---|
+   | `limit 22/tcp` | SSH stays reachable; more than 6 connection attempts per 30 s from one IP are blocked |
+   | `5353/udp` in, and from source port 5353 | mDNS, needed for Chromecast and network discovery |
+   | everything on `virbr0` | libvirt VMs need DHCP/DNS from the host |
+   | everything on `docker0` | containers talking to services on the host |
+   | `DEFAULT_FORWARD_POLICY="ACCEPT"` | ufw's default forward DROP would cut VM/container NAT |
+
+   Note: ports **published by Docker** (`-p 8080:80`) bypass ufw, because Docker writes its own iptables rules.
+3. **CPU sustained power limit.** `matebook-cpu-power-limit.service` writes 25 W to `intel-rapl:0/constraint_0_power_limit_uw` at boot. A `system-sleep` hook re-applies it after suspend, because firmware can reset RAPL limits on resume. Check with `cat /sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw` (should be `25000000`).
+
 ---
 
 ## Quick start
@@ -291,6 +319,7 @@ sudo reboot
 sudo bash scripts/03-verify.sh        # unplug the charger first to measure battery drain
 sudo bash scripts/04-services.sh      # optional
 bash scripts/05-browsers.sh           # optional, as your normal user
+sudo bash scripts/06-hardening.sh     # optional: security updates, firewall, 25 W limit
 ```
 
 **Read the scripts before running them.** They were written for one specific machine and set of choices, such as removing the NVIDIA driver and making Docker/Apache on-demand. Edit `02-apply.sh` if your choices differ: each step is a separate function called from `main()`, so you can comment steps out.
@@ -322,7 +351,7 @@ Side effects:
 | `intel-media-va-driver-non-free` | Only adds encoding features; decoding is identical |
 | nouveau runtime PM instead of "no driver" | Extra moving parts and a slow, unreclocked GPU; driverless D3cold works perfectly |
 | A battery charge limit | Personal choice. To set one: `echo "75 80" \| sudo tee /sys/devices/platform/huawei-wmi/charge_control_thresholds` (`"0 100"` to turn off) |
-| Firewall / SSH hardening | Out of scope, but recommended: `sshd` listens on all interfaces with password login by default |
+| SSH key-only login | Not forced, so nobody gets locked out. Recommended: copy a key with `ssh-copy-id`, then set `PasswordAuthentication no` |
 | Undervolting | Usually locked on Comet Lake after the Plundervolt fixes, and MSR writes are blocked by kernel lockdown |
 
 ---
@@ -344,6 +373,9 @@ Side effects:
 | zram | `sudo rm /etc/systemd/zram-generator.conf && sudo apt purge systemd-zram-generator`, then reboot |
 | Masked services | `sudo systemctl unmask <unit> && sudo systemctl enable --now <unit>` |
 | Browser flags | `rm ~/.local/share/applications/{google-chrome,brave-browser}.desktop` |
+| Security updates | `sudo apt purge unattended-upgrades` |
+| Firewall | `sudo ufw disable` |
+| CPU limit 25 W | `sudo systemctl disable --now matebook-cpu-power-limit.service && sudo rm /etc/systemd/system/matebook-cpu-power-limit.service /usr/lib/systemd/system-sleep/matebook-cpu-power-limit`, then reboot |
 
 ---
 
@@ -369,7 +401,20 @@ No, and it almost certainly never will without help from Huawei/Goodix:
 - **Alternative.** For quick unlock, use a FIDO2 security key with `pam-u2f`. The camera has no IR, so face unlock (Howdy) isn't secure.
 
 **Firmware updates?**
-`fwupdmgr` sees the BIOS (UEFI capsule), the NVMe and the TPM, but Huawei publishes nothing on LVFS. BIOS updates require Windows / Huawei PC Manager.
+There are no device firmware updates: `fwupdmgr` sees the BIOS (UEFI capsule), the NVMe and the TPM, but Huawei publishes nothing on LVFS. BIOS updates require Windows / Huawei PC Manager.
+
+There **are** Secure Boot database updates, and they matter once Secure Boot is on. The test machine shipped with a **2016** revocation list (dbx) and only Microsoft's 2011 UEFI CA:
+
+```bash
+sudo fwupdmgr refresh && sudo fwupdmgr update   # charger connected, then reboot
+```
+
+| Update | Before | After |
+|---|---|---|
+| UEFI dbx (revoked boot software, e.g. BlackLotus) | 2016-08-09 | 2026-04-02 |
+| UEFI db (Microsoft UEFI CA) | 2011 | 2023: needed for future shims signed with the new key |
+
+Both applied cleanly on BIOS 1.26, and Secure Boot kept working. fwupd checks that the installed bootloader isn't revoked before writing the dbx.
 
 ## Other MateBook models
 
